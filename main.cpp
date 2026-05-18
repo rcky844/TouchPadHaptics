@@ -63,13 +63,13 @@ QStringList getHidRawDevices() {
     return enumeratedDevices;
 }
 
-int getHapticIntensity(const char *devicePath) {
+int getHapticIntensity(const char *devicePath, int reportId) {
     int fd = open(devicePath, O_RDONLY);
     if (fd < 0)
         return 0;
 
     unsigned char buffer[2] = {0};
-    buffer[0] = 11;
+    buffer[0] = reportId;
 
     int bytesRead = ioctl(fd, HIDIOCGFEATURE(2), buffer);
     close(fd);
@@ -81,15 +81,13 @@ int getHapticIntensity(const char *devicePath) {
     return 0;
 }
 
-void setHapticIntensity(const char *devicePath, int value) {
+void setHapticIntensity(const char *devicePath, int value, int reportId) {
     int fd = open(devicePath, O_RDWR);
-    if (fd < 0) {
-        // TODO: Warning prompt for open failure
+    if (fd < 0)
         return;
-    }
 
     unsigned char report[2];
-    report[0] = 11;
+    report[0] = reportId;
     report[1] = (unsigned char)value;
 
     ioctl(fd, HIDIOCSFEATURE(2), report);
@@ -125,9 +123,9 @@ int main(int argc, char *argv[]) {
     slider->setRange(0, 100);
     slider->setValue(0);
 
-    QObject::connect(deviceSelector, &QComboBox::currentTextChanged, [slider, label, deviceSelector]() {
+    QObject::connect(deviceSelector, &QComboBox::currentTextChanged, [slider, label, reportIdSelector, deviceSelector]() {
         QString currentDevice = deviceSelector->currentData().toString();
-        int currentIntensity = getHapticIntensity(currentDevice.toUtf8().constData());
+        int currentIntensity = getHapticIntensity(currentDevice.toUtf8().constData(), reportIdSelector->value());
 
         slider->blockSignals(true);
         slider->setValue(currentIntensity);
@@ -135,10 +133,14 @@ int main(int argc, char *argv[]) {
         slider->blockSignals(false);
     });
 
-    QObject::connect(slider, &QSlider::valueChanged, label, [label, deviceSelector](int value) {
+    QObject::connect(reportIdSelector, &QSpinBox::valueChanged, [=](int index) {
+        emit deviceSelector->currentTextChanged(deviceSelector->currentText());
+    });
+
+    QObject::connect(slider, &QSlider::valueChanged, label, [label, reportIdSelector, deviceSelector](int value) {
         label->setText(QString("Intensity: %1%").arg(value));
         QString currentDevice = deviceSelector->currentData().toString();
-        setHapticIntensity(currentDevice.toUtf8().constData(), value);
+        setHapticIntensity(currentDevice.toUtf8().constData(), value, reportIdSelector->value());
     });
 
     layout->addWidget(comboLabel);
@@ -150,6 +152,9 @@ int main(int argc, char *argv[]) {
 
     window.setFixedSize(300, 200);
     window.show();
+
+    // Ensure percentage update
+    emit deviceSelector->currentTextChanged(deviceSelector->currentText());
 
     return app.exec();
 }
